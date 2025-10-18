@@ -6,6 +6,8 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 import time
+import re
+
 
 # -------------------------
 # CONFIGURAÇÕES DE BANCO
@@ -33,37 +35,74 @@ PG_TABLE = "enderecos_geolocalizados"
 # -------------------------
 
 def buscar_enderecos_mysql():
-    """Puxa endereços do MySQL"""
-    # Substitui @ por %40 na URL para não quebrar a conexão
-    senha_url = MYSQL_PASSWORD.replace("@", "%40")
-    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{senha_url}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    """Puxa endereços do MySQL somente de ontem"""
+    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
     engine_mysql = create_engine(mysql_url)
     
-    query = f"SELECT EnderecoObra FROM {MYSQL_TABLE} WHERE EnderecoObra IS NOT NULL"
+    query = """
+    SELECT EnderecoObra 
+    FROM calendar AS a 
+    WHERE CodServicosCab > 0 
+      AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY 
+    ORDER BY a.id DESC;
+    """
     
     df = pd.read_sql(query, engine_mysql)
-    print(f"🔍 {len(df)} endereços encontrados no MySQL.")
+    print(f"🔍 {len(df)} endereços encontrados do dia anterior no MySQL.")
     return df
 
+
+
+def limpar_endereco(endereco):
+    """Limpa e padroniza o texto do endereço para melhor leitura pelo Nominatim."""
+    if not endereco or not isinstance(endereco, str):
+        return ""
+    
+    # Remove prefixos redundantes
+    endereco = re.sub(r'Endereço (Principal|da Obra):', '', endereco, flags=re.IGNORECASE)
+    
+    # Remove termos desnecessários
+    endereco = re.sub(r'\b(Rua:|Avenida|Av\.?|N°|No\.?|Apto|Apartamento|Ed\.?|Condominio|Bairro:|Cidade:|CEP:)\b', '', endereco, flags=re.IGNORECASE)
+    
+    # Substitui múltiplos espaços e separa blocos por vírgula
+    endereco = re.sub(r'\s*-\s*', ', ', endereco)
+    endereco = re.sub(r'\s+', ' ', endereco).strip()
+    
+    return endereco
+
 def geolocalizar_endereco(endereco):
-    """Consulta o Nominatim para obter latitude e longitude"""
+    """Consulta o Nominatim para obter latitude e longitude, com limpeza e fallback."""
+    endereco_limpo = limpar_endereco(endereco)
+    if not endereco_limpo:
+        return None, None
+
     url = "https://nominatim.openstreetmap.org/search"
     params = {
-        "q": endereco,
+        "q": endereco_limpo + ", Minas Gerais, Brasil",
         "format": "json",
-        "addressdetails": 0,
         "limit": 1
     }
+
     try:
         resp = requests.get(url, params=params, headers={"User-Agent": "MasterGeoScript"})
         data = resp.json()
         if data:
-            lat = float(data[0]["lat"])
-            lon = float(data[0]["lon"])
-            return lat, lon
+            return float(data[0]["lat"]), float(data[0]["lon"])
+        else:
+            # tenta fallback apenas com a cidade
+            partes = endereco_limpo.split(",")
+            if len(partes) > 1:
+                fallback = partes[-1].strip() + ", Minas Gerais, Brasil"
+                params["q"] = fallback
+                resp = requests.get(url, params=params, headers={"User-Agent": "MasterGeoScript"})
+                data = resp.json()
+                if data:
+                    return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception as e:
         print(f"❌ Erro ao geolocalizar {endereco}: {e}")
+
     return None, None
+
 
 # -------------------------
 # EXECUÇÃO
