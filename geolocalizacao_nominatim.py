@@ -12,8 +12,8 @@ import time
 # -------------------------
 
 # MySQL externo (onde estão os endereços)
-MYSQL_USER = "net"
-MYSQL_PASSWORD = "master45@net"  # senha original com @
+MYSQL_USER = "eugon2"
+MYSQL_PASSWORD = "Master45@net"  # senha original com @
 MYSQL_HOST = "187.73.33.163"
 MYSQL_PORT = 3306
 MYSQL_DB = "eugon2"
@@ -21,7 +21,7 @@ MYSQL_TABLE = "calendar"
 
 # PostgreSQL local (onde vamos salvar para Superset)
 PG_USER = "geo_user"
-PG_PASSWORD = "mastergeo"  # ajuste para sua senha real
+PG_PASSWORD = "mastersoundbh"  # ajuste para sua senha real
 PG_HOST = "localhost"
 PG_PORT = 5432
 PG_DB = "geo"
