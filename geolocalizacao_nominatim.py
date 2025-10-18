@@ -16,6 +16,7 @@ import re
 # MySQL externo (onde estão os endereços)
 MYSQL_USER = "eugon2"
 MYSQL_PASSWORD = "Master45@net"  # senha original com @
+MYSQL_PASSWORD_ESC = MYSQL_PASSWORD.replace("@", "%40")  # escapando o @
 MYSQL_HOST = "187.73.33.163"
 MYSQL_PORT = 3306
 MYSQL_DB = "eugon2"
@@ -23,11 +24,11 @@ MYSQL_TABLE = "calendar"
 
 # PostgreSQL local (onde vamos salvar para Superset)
 PG_USER = "geo_user"
-PG_PASSWORD = "mastersoundbh"  # ajuste para sua senha real
+PG_PASSWORD = "mastersoundbh"
 PG_HOST = "localhost"
 PG_PORT = 5432
 PG_DB = "geo"
-PG_SCHEMA = "public"  # ou outro schema que seu usuário tenha permissão
+PG_SCHEMA = "public"
 PG_TABLE = "enderecos_geolocalizados"
 
 # -------------------------
@@ -36,7 +37,7 @@ PG_TABLE = "enderecos_geolocalizados"
 
 def buscar_enderecos_mysql():
     """Puxa endereços do MySQL somente de ontem"""
-    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD_ESC}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
     engine_mysql = create_engine(mysql_url)
     
     query = """
@@ -52,26 +53,21 @@ def buscar_enderecos_mysql():
     return df
 
 
-
 def limpar_endereco(endereco):
     """Limpa e padroniza o texto do endereço para melhor leitura pelo Nominatim."""
     if not endereco or not isinstance(endereco, str):
         return ""
     
-    # Remove prefixos redundantes
     endereco = re.sub(r'Endereço (Principal|da Obra):', '', endereco, flags=re.IGNORECASE)
-    
-    # Remove termos desnecessários
     endereco = re.sub(r'\b(Rua:|Avenida|Av\.?|N°|No\.?|Apto|Apartamento|Ed\.?|Condominio|Bairro:|Cidade:|CEP:)\b', '', endereco, flags=re.IGNORECASE)
-    
-    # Substitui múltiplos espaços e separa blocos por vírgula
     endereco = re.sub(r'\s*-\s*', ', ', endereco)
     endereco = re.sub(r'\s+', ' ', endereco).strip()
     
     return endereco
 
+
 def geolocalizar_endereco(endereco):
-    """Consulta o Nominatim para obter latitude e longitude, com limpeza e fallback."""
+    """Consulta o Nominatim para obter latitude e longitude."""
     endereco_limpo = limpar_endereco(endereco)
     if not endereco_limpo:
         return None, None
@@ -89,7 +85,6 @@ def geolocalizar_endereco(endereco):
         if data:
             return float(data[0]["lat"]), float(data[0]["lon"])
         else:
-            # tenta fallback apenas com a cidade
             partes = endereco_limpo.split(",")
             if len(partes) > 1:
                 fallback = partes[-1].strip() + ", Minas Gerais, Brasil"
@@ -109,10 +104,8 @@ def geolocalizar_endereco(endereco):
 # -------------------------
 
 def main():
-    # Pega os endereços
     df = buscar_enderecos_mysql()
     
-    # Geolocaliza cada endereço
     latitudes = []
     longitudes = []
     for idx, row in df.iterrows():
@@ -121,16 +114,14 @@ def main():
         latitudes.append(lat)
         longitudes.append(lon)
         print(f"📍 {endereco} -> ({lat}, {lon})")
-        time.sleep(1)  # evita bloqueio do Nominatim
+        time.sleep(1)  # Respeita limite do Nominatim
     
     df["Latitude"] = latitudes
     df["Longitude"] = longitudes
     
-    # Conecta ao PostgreSQL
     local_db_url = f"postgresql+psycopg2://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
     engine_pg = create_engine(local_db_url)
     
-    # Salva no PostgreSQL dentro do schema
     try:
         df.to_sql(
             PG_TABLE,
@@ -143,6 +134,7 @@ def main():
         print("📦 Pronto para importar no Superset.")
     except SQLAlchemyError as e:
         print("❌ Erro ao salvar no PostgreSQL:", e)
+
 
 if __name__ == "__main__":
     main()
