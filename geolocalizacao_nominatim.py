@@ -58,10 +58,16 @@ def limpar_endereco(endereco):
     if not endereco or not isinstance(endereco, str):
         return ""
     
-    # Remove qualquer prefixo "Endereço da Obra" ou "Endereço Principal" no início da string
-    endereco = re.sub(r'^\s*End[eé]re[cç]o\s+(da Obra|Principal)\s*:\s*', '', endereco, flags=re.IGNORECASE)
+    # Remove prefixos do começo da string
+    endereco = re.sub(
+        r'^\s*End[eé]re[cç]o\s+(da Obra|Principal)\s*:\s*',
+        '',
+        endereco,
+        flags=re.IGNORECASE
+    )
     
-    # Remove excesso de espaços e quebras
+    # Remove múltiplos espaços, traços e organiza vírgulas
+    endereco = re.sub(r'\s*-\s*', ', ', endereco)
     endereco = re.sub(r'\s+', ' ', endereco).strip()
     
     return endereco
