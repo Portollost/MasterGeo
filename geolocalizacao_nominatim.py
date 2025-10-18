@@ -54,16 +54,18 @@ def buscar_enderecos_mysql():
 
 
 def limpar_endereco(endereco):
-    """Limpa e padroniza o texto do endereço para melhor leitura pelo Nominatim."""
+    """Limpa o endereço removendo prefixos como 'Endereço da Obra' ou 'Endereço Principal'."""
     if not endereco or not isinstance(endereco, str):
         return ""
     
-    endereco = re.sub(r'Endereço (Principal|da Obra):', '', endereco, flags=re.IGNORECASE)
-    endereco = re.sub(r'\b(Rua:|Avenida|Av\.?|N°|No\.?|Apto|Apartamento|Ed\.?|Condominio|Bairro:|Cidade:|CEP:)\b', '', endereco, flags=re.IGNORECASE)
-    endereco = re.sub(r'\s*-\s*', ', ', endereco)
+    # Remove qualquer prefixo "Endereço da Obra" ou "Endereço Principal" no início da string
+    endereco = re.sub(r'^\s*End[eé]re[cç]o\s+(da Obra|Principal)\s*:\s*', '', endereco, flags=re.IGNORECASE)
+    
+    # Remove excesso de espaços e quebras
     endereco = re.sub(r'\s+', ' ', endereco).strip()
     
     return endereco
+
 
 
 def geolocalizar_endereco(endereco):
