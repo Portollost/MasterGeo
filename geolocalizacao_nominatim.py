@@ -11,7 +11,7 @@ from urllib.parse import quote_plus
 
 # MySQL externo (onde estão os endereços)
 MYSQL_USER = "eugon2"
-MYSQL_PASS = "Master45%40net"
+MYSQL_PASS = "Master45@net"  # senha literal
 MYSQL_HOST = "187.73.33.163"
 MYSQL_DB   = "eugon2"
 
@@ -20,7 +20,7 @@ LOCAL_DB_URL = "sqlite:///geolocalizacao.db"
 
 # API Nominatim
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-REQUEST_DELAY = 1.5  # segundos
+REQUEST_DELAY = 1.5  # segundos entre requisições
 
 # ----------------------------
 # FUNÇÕES
@@ -51,9 +51,10 @@ def geocode(address):
 
 def format_endereco(raw_address):
     """Normaliza endereço para Nominatim"""
-    # Remove texto tipo 'Bairro:' e 'Cidade:' e adiciona estado e país
-    address = raw_address.replace("Bairro:", "").replace("Cidade:", "")
-    return f"{address}, MG, Brasil"
+    # Remove prefixo e textos desnecessários
+    address = raw_address.replace("Endereço da Obra:", "")
+    address = address.replace("Bairro:", "").replace("Cidade:", "")
+    return f"{address.strip()}, MG, Brasil"
 
 # ----------------------------
 # CONEXÃO COM MYSQL EXTERNO
@@ -87,14 +88,14 @@ results = []
 
 for _, row in df_enderecos.iterrows():
     raw = row["EnderecoObra"]
-    endereco = format_endereco(raw)
-    lat, lon = geocode(endereco)
+    endereco_limpo = format_endereco(raw)
+    lat, lon = geocode(endereco_limpo)
     results.append({
-        "EnderecoObra": raw,
+        "EnderecoObra": endereco_limpo,
         "Latitude": lat,
         "Longitude": lon
     })
-    print(f"📍 Endereço da Obra: {raw} -> ({lat}, {lon})")
+    print(f"📍 Endereço da Obra: {endereco_limpo} -> ({lat}, {lon})")
     time.sleep(REQUEST_DELAY)
 
 df_geo = pd.DataFrame(results)
