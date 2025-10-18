@@ -54,19 +54,17 @@ def buscar_enderecos_mysql():
 
 
 def limpar_endereco(endereco):
-    """Limpa o endereço removendo prefixos como 'Endereço da Obra' ou 'Endereço Principal'."""
+    """Limpa e padroniza o texto do endereço para melhor leitura pelo Nominatim."""
     if not endereco or not isinstance(endereco, str):
         return ""
     
-    # Remove prefixos do começo da string
-    endereco = re.sub(
-        r'^\s*End[eé]re[cç]o\s+(da Obra|Principal)\s*:\s*',
-        '',
-        endereco,
-        flags=re.IGNORECASE
-    )
+    # Remove prefixos "Endereço Principal:" ou "Endereço da obra:" com espaços extras
+    endereco = re.sub(r'Endereço\s+(Principal|da obra)\s*:\s*', '', endereco, flags=re.IGNORECASE)
     
-    # Remove múltiplos espaços, traços e organiza vírgulas
+    # Remove outros termos desnecessários
+    endereco = re.sub(r'\b(Rua:|Avenida|Av\.?|N°|No\.?|Apto|Apartamento|Ed\.?|Condominio|Bairro:|Cidade:|CEP:)\b', '', endereco, flags=re.IGNORECASE)
+    
+    # Substitui múltiplos espaços e separa blocos por vírgula
     endereco = re.sub(r'\s*-\s*', ', ', endereco)
     endereco = re.sub(r'\s+', ' ', endereco).strip()
     
