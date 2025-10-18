@@ -10,7 +10,7 @@ from urllib.parse import quote_plus
 # ----------------------------
 
 # MySQL externo (onde estão os endereços)
-MYSQL_USER = "usuario"
+MYSQL_USER = "eugon2"
 MYSQL_PASS = "Master45%40net"
 MYSQL_HOST = "187.73.33.163"
 MYSQL_DB   = "eugon2"
