@@ -1,0 +1,8 @@
+1. Aglutinar relatorios e nomes de participantes por cliente
+2. Enviar uma notificação diária de segunda a sexta-feira às 8 AM para cada técnico, mostrando para ele dentre os atendimentos com informações incompletas (status, relatorio, inico e finalização atendimentos)
+{
+    Status faltando:
+    relatorio faltando:
+    Horários faltnado:
+    Confirmação
+}
