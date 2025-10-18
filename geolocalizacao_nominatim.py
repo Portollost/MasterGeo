@@ -12,20 +12,20 @@ import time
 # -------------------------
 
 # MySQL externo (onde estão os endereços)
-MYSQL_USER = "usuario_mysql"
-MYSQL_PASSWORD = "senha_mysql"
-MYSQL_HOST = "host_mysql"
+MYSQL_USER = "net"
+MYSQL_PASSWORD = "master45@net"  # senha original com @
+MYSQL_HOST = "187.73.33.163"
 MYSQL_PORT = 3306
 MYSQL_DB = "eugon2"
 MYSQL_TABLE = "calendar"
 
 # PostgreSQL local (onde vamos salvar para Superset)
 PG_USER = "geo_user"
-PG_PASSWORD = "sua_senha"
+PG_PASSWORD = "mastergeo"  # ajuste para sua senha real
 PG_HOST = "localhost"
 PG_PORT = 5432
-PG_DB = "seu_banco"
-PG_SCHEMA = "geo_schema"
+PG_DB = "geo"
+PG_SCHEMA = "public"  # ou outro schema que seu usuário tenha permissão
 PG_TABLE = "enderecos_geolocalizados"
 
 # -------------------------
@@ -34,7 +34,9 @@ PG_TABLE = "enderecos_geolocalizados"
 
 def buscar_enderecos_mysql():
     """Puxa endereços do MySQL"""
-    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    # Substitui @ por %40 na URL para não quebrar a conexão
+    senha_url = MYSQL_PASSWORD.replace("@", "%40")
+    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{senha_url}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
     engine_mysql = create_engine(mysql_url)
     
     query = f"SELECT EnderecoObra FROM {MYSQL_TABLE} WHERE EnderecoObra IS NOT NULL"
@@ -79,7 +81,7 @@ def main():
         lat, lon = geolocalizar_endereco(endereco)
         latitudes.append(lat)
         longitudes.append(lon)
-        print(f"📍 Endereço da Obra: {endereco} -> ({lat}, {lon})")
+        print(f"📍 {endereco} -> ({lat}, {lon})")
         time.sleep(1)  # evita bloqueio do Nominatim
     
     df["Latitude"] = latitudes
@@ -88,11 +90,6 @@ def main():
     # Conecta ao PostgreSQL
     local_db_url = f"postgresql+psycopg2://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
     engine_pg = create_engine(local_db_url)
-    
-    # Cria schema se não existir
-    with engine_pg.connect() as conn:
-        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {PG_SCHEMA}")
-        conn.commit()
     
     # Salva no PostgreSQL dentro do schema
     try:
