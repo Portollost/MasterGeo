@@ -104,7 +104,7 @@ query = """
 SELECT EnderecoObra
 FROM calendar AS a
 WHERE CodServicosCab > 0
-  AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY
+  AND DATE(a.start_date) = CURDATE() - INTERVAL 2 DAY
 ORDER BY a.id DESC;
 """
 
@@ -156,3 +156,4 @@ worksheet = sh.sheet1
 set_with_dataframe(worksheet, df_geo)
 
 print(f"✅ Dados salvos na Google Sheet '{GOOGLE_SHEET_NAME}' e prontos para o Superset.")
+    
