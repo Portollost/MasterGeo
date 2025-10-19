@@ -80,6 +80,17 @@ def geocode(raw_address):
     print(f"⚠️ Nenhuma coordenada encontrada para: {raw_address}")
     return None, None
 
+def corrige_decimal(valor):
+    """Corrige vírgula para ponto e converte para float"""
+    if valor is None:
+        return None
+    if isinstance(valor, str):
+        valor = valor.replace(',', '.')
+    try:
+        return float(valor)
+    except:
+        return None
+
 # ----------------------------
 # CONEXÃO COM MYSQL
 # ----------------------------
@@ -93,7 +104,7 @@ query = """
 SELECT EnderecoObra
 FROM calendar AS a
 WHERE CodServicosCab > 0
-  AND DATE(a.start_date) = CURDATE() - INTERVAL 2 DAY
+  AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY
 ORDER BY a.id DESC;
 """
 
@@ -122,6 +133,10 @@ for _, row in df_enderecos.iterrows():
 
 df_geo = pd.DataFrame(results)
 
+# Corrige o formato de latitude e longitude para float
+df_geo['Latitude'] = df_geo['Latitude'].apply(corrige_decimal)
+df_geo['Longitude'] = df_geo['Longitude'].apply(corrige_decimal)
+
 # ----------------------------
 # SALVAR NO GOOGLE SHEETS
 # ----------------------------
@@ -140,4 +155,4 @@ except gspread.SpreadsheetNotFound:
 worksheet = sh.sheet1
 set_with_dataframe(worksheet, df_geo)
 
-print(f"✅ Dados salvos na Google Sheet '{GOOGLE_SHEET_NAME}'.")
+print(f"✅ Dados salvos na Google Sheet '{GOOGLE_SHEET_NAME}' e prontos para o Superset.")
