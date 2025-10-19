@@ -22,8 +22,8 @@ MYSQL_HOST = "187.73.33.163"
 MYSQL_DB   = "eugon2"
 
 # Google Sheets
-GOOGLE_SHEET_NAME = "EnderecosGeolocalizados"
-SERVICE_ACCOUNT_JSON = "service_account.json"  # caminho para sua chave JSON
+GOOGLE_SHEET_NAME = "enderecos"
+SERVICE_ACCOUNT_JSON = "x-pathway-475010-f3-c694d792cffc.json"  # caminho para sua chave JSON
 
 # API Nominatim
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -93,7 +93,7 @@ query = """
 SELECT EnderecoObra
 FROM calendar AS a
 WHERE CodServicosCab > 0
-  AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY
+  AND DATE(a.start_date) = CURDATE() - INTERVAL 2 DAY
 ORDER BY a.id DESC;
 """
 
