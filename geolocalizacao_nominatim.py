@@ -6,6 +6,7 @@ import time
 import pandas as pd
 from sqlalchemy import create_engine, text
 from urllib.parse import quote_plus
+import re
 
 # ----------------------------
 # CONFIGURAÇÕES
@@ -38,7 +39,6 @@ def escape_password(password):
     """Escapa caracteres especiais na senha"""
     return quote_plus(password)
 
-import re
 
 def limpar_endereco(endereco):
     """Remove prefixos e informações internas que atrapalham a geolocalização."""
@@ -47,13 +47,13 @@ def limpar_endereco(endereco):
 
     s = endereco.strip()
 
-    # Remove prefixos como "Endereço da Obra:"
+    # Remove prefixos como "Endereço da Obra:" ou "Endereço Principal:"
     s = re.sub(r'^\s*End[eé]re[cç]o\s+(da obra|principal)\s*:\s*', '', s, flags=re.IGNORECASE)
 
     # Normaliza traços em vírgulas
     s = re.sub(r'\s*-\s*', ', ', s)
 
-    # Remove "11º andar", "apto 202", "bloco A"
+    # Remove "11º andar", "apto 202", "bloco A", etc
     s = re.sub(r'\b\d{1,3}\s*(?:º|ª)?\s*(?:andar|andar\.?)\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\b(apt|apto|apartamento)\.? ?\d+\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\bbloco\b[:\s]*[A-Za-z0-9-]+\b', '', s, flags=re.IGNORECASE)
@@ -76,11 +76,8 @@ def geocode(raw_address):
     if not endereco_limpo:
         return None, None
 
-    NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
     headers = {"User-Agent": "MasterGeoScript/1.0 (contato@mastersound.com)"}
-    REQUEST_DELAY = 1.5
 
-    # Tenta várias formas do endereço
     tentativas = [
         f"{endereco_limpo}, Minas Gerais, Brasil",
         re.sub(r'\bAv[\.]?\b', 'Avenida', endereco_limpo) + ", Minas Gerais, Brasil",
@@ -103,7 +100,9 @@ def geocode(raw_address):
             print(f"❌ erro ao consultar '{q}': {e}")
         time.sleep(REQUEST_DELAY)
 
+    print(f"⚠️ Nenhuma coordenada encontrada para: {raw_address}")
     return None, None
+
 
 # ----------------------------
 # CONEXÃO COM MYSQL
@@ -118,7 +117,7 @@ query = """
 SELECT EnderecoObra
 FROM calendar AS a
 WHERE CodServicosCab > 0
-  AND DATE(a.start_date) = CURDATE() - INTERVAL 2 DAY
+  AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY
 ORDER BY a.id DESC;
 """
 
@@ -127,6 +126,7 @@ with mysql_engine.connect() as conn:
 
 print(f"🔍 {len(df_enderecos)} endereços encontrados no MySQL.")
 
+
 # ----------------------------
 # GEOCODIFICAÇÃO
 # ----------------------------
@@ -134,8 +134,8 @@ print(f"🔍 {len(df_enderecos)} endereços encontrados no MySQL.")
 results = []
 for _, row in df_enderecos.iterrows():
     raw = row["EnderecoObra"]
-    endereco_limpo = format_endereco(raw)
-    lat, lon = geocode(endereco_limpo)
+    endereco_limpo = limpar_endereco(raw)
+    lat, lon = geocode(raw)
     results.append({
         "EnderecoOriginal": raw,
         "EnderecoFormatado": endereco_limpo,
@@ -146,6 +146,7 @@ for _, row in df_enderecos.iterrows():
     time.sleep(REQUEST_DELAY)
 
 df_geo = pd.DataFrame(results)
+
 
 # ----------------------------
 # SALVAR NO POSTGRES
