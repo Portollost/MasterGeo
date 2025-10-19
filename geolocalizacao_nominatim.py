@@ -7,6 +7,9 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from urllib.parse import quote_plus
 import re
+import gspread
+from gspread_dataframe import set_with_dataframe
+from oauth2client.service_account import ServiceAccountCredentials
 
 # ----------------------------
 # CONFIGURAÇÕES
@@ -18,14 +21,9 @@ MYSQL_PASS = "Master45@net"
 MYSQL_HOST = "187.73.33.163"
 MYSQL_DB   = "eugon2"
 
-# PostgreSQL local (para o Superset)
-PG_USER = "geo_user"
-PG_PASS = "mastersoundbh"
-PG_HOST = "localhost"
-PG_PORT = 5432
-PG_DB   = "geo"
-PG_SCHEMA = "public"
-PG_TABLE = "enderecos_geolocalizados"
+# Google Sheets
+GOOGLE_SHEET_NAME = "EnderecosGeolocalizados"
+SERVICE_ACCOUNT_JSON = "service_account.json"  # caminho para sua chave JSON
 
 # API Nominatim
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -36,54 +34,34 @@ REQUEST_DELAY = 1.5  # segundos entre requisições
 # ----------------------------
 
 def escape_password(password):
-    """Escapa caracteres especiais na senha"""
     return quote_plus(password)
 
-
 def limpar_endereco(endereco):
-    """Remove prefixos e informações internas que atrapalham a geolocalização."""
     if not endereco or not isinstance(endereco, str):
         return ""
-
     s = endereco.strip()
-
-    # Remove prefixos como "Endereço da Obra:" ou "Endereço Principal:"
     s = re.sub(r'^\s*End[eé]re[cç]o\s+(da obra|principal)\s*:\s*', '', s, flags=re.IGNORECASE)
-
-    # Normaliza traços em vírgulas
     s = re.sub(r'\s*-\s*', ', ', s)
-
-    # Remove "11º andar", "apto 202", "bloco A", etc
     s = re.sub(r'\b\d{1,3}\s*(?:º|ª)?\s*(?:andar|andar\.?)\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\b(apt|apto|apartamento)\.? ?\d+\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\bbloco\b[:\s]*[A-Za-z0-9-]+\b', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\b(s\/n|sem numero|sem número)\b', '', s, flags=re.IGNORECASE)
-
-    # Remove rótulos, mas mantém os valores
     s = re.sub(r'\bBairro:\s*', '', s, flags=re.IGNORECASE)
     s = re.sub(r'\bCidade:\s*', '', s, flags=re.IGNORECASE)
-
-    # Remove espaços e vírgulas extras
     s = re.sub(r'\s+', ' ', s).strip()
     s = re.sub(r',\s*,+', ', ', s)
-
     return s.strip(' ,')
 
-
 def geocode(raw_address):
-    """Consulta Nominatim com fallback para variações de endereço."""
     endereco_limpo = limpar_endereco(raw_address)
     if not endereco_limpo:
         return None, None
-
     headers = {"User-Agent": "MasterGeoScript/1.0 (contato@mastersound.com)"}
-
     tentativas = [
         f"{endereco_limpo}, Minas Gerais, Brasil",
         re.sub(r'\bAv[\.]?\b', 'Avenida', endereco_limpo) + ", Minas Gerais, Brasil",
         endereco_limpo.split(',')[0] + ", Minas Gerais, Brasil"
     ]
-
     for q in tentativas:
         try:
             print(f"🔎 tentando: {q}")
@@ -99,10 +77,8 @@ def geocode(raw_address):
         except Exception as e:
             print(f"❌ erro ao consultar '{q}': {e}")
         time.sleep(REQUEST_DELAY)
-
     print(f"⚠️ Nenhuma coordenada encontrada para: {raw_address}")
     return None, None
-
 
 # ----------------------------
 # CONEXÃO COM MYSQL
@@ -126,7 +102,6 @@ with mysql_engine.connect() as conn:
 
 print(f"🔍 {len(df_enderecos)} endereços encontrados no MySQL.")
 
-
 # ----------------------------
 # GEOCODIFICAÇÃO
 # ----------------------------
@@ -147,23 +122,22 @@ for _, row in df_enderecos.iterrows():
 
 df_geo = pd.DataFrame(results)
 
-
 # ----------------------------
-# SALVAR NO POSTGRES
+# SALVAR NO GOOGLE SHEETS
 # ----------------------------
 
-pg_engine = create_engine(
-    f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
-)
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+credentials = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_JSON, scope)
+gc = gspread.authorize(credentials)
 
-with pg_engine.begin() as conn:
-    df_geo.to_sql(
-        PG_TABLE,
-        conn,
-        schema=PG_SCHEMA,
-        if_exists="replace",
-        index=False
-    )
+# Abre ou cria a planilha
+try:
+    sh = gc.open(GOOGLE_SHEET_NAME)
+except gspread.SpreadsheetNotFound:
+    sh = gc.create(GOOGLE_SHEET_NAME)
+    sh.share(None, perm_type='anyone', role='writer')  # qualquer pessoa com link pode editar
 
-print(f"✅ Dados salvos na tabela '{PG_SCHEMA}.{PG_TABLE}'.")
-print("📦 Pronto para importar no Superset.")
+worksheet = sh.sheet1
+set_with_dataframe(worksheet, df_geo)
+
+print(f"✅ Dados salvos na Google Sheet '{GOOGLE_SHEET_NAME}'.")
