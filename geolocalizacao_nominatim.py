@@ -38,33 +38,72 @@ def escape_password(password):
     """Escapa caracteres especiais na senha"""
     return quote_plus(password)
 
-def geocode(address):
-    """Consulta Nominatim e retorna latitude e longitude"""
-    try:
-        params = {
-            "q": address,
-            "format": "json",
-            "addressdetails": 0,
-            "limit": 1,
-        }
-        headers = {"User-Agent": "MasterGeoScript/1.0"}
-        response = requests.get(NOMINATIM_URL, params=params, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                return float(data[0]["lat"]), float(data[0]["lon"])
-    except Exception as e:
-        print(f"❌ Erro ao consultar '{address}': {e}")
-    return None, None
+import re
 
-def format_endereco(raw_address):
-    """Limpa o texto e monta formato amigável pro Nominatim"""
-    if not raw_address:
+def limpar_endereco(endereco):
+    """Remove prefixos e informações internas que atrapalham a geolocalização."""
+    if not endereco or not isinstance(endereco, str):
         return ""
-    address = raw_address.replace("Endereço da Obra:", "")
-    address = address.replace("Endereço Principal:", "")
-    address = address.replace("Bairro:", "").replace("Cidade:", "")
-    return f"{address.strip()}, Minas Gerais, Brasil"
+
+    s = endereco.strip()
+
+    # Remove prefixos como "Endereço da Obra:"
+    s = re.sub(r'^\s*End[eé]re[cç]o\s+(da obra|principal)\s*:\s*', '', s, flags=re.IGNORECASE)
+
+    # Normaliza traços em vírgulas
+    s = re.sub(r'\s*-\s*', ', ', s)
+
+    # Remove "11º andar", "apto 202", "bloco A"
+    s = re.sub(r'\b\d{1,3}\s*(?:º|ª)?\s*(?:andar|andar\.?)\b', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\b(apt|apto|apartamento)\.? ?\d+\b', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bbloco\b[:\s]*[A-Za-z0-9-]+\b', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\b(s\/n|sem numero|sem número)\b', '', s, flags=re.IGNORECASE)
+
+    # Remove rótulos, mas mantém os valores
+    s = re.sub(r'\bBairro:\s*', '', s, flags=re.IGNORECASE)
+    s = re.sub(r'\bCidade:\s*', '', s, flags=re.IGNORECASE)
+
+    # Remove espaços e vírgulas extras
+    s = re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r',\s*,+', ', ', s)
+
+    return s.strip(' ,')
+
+
+def geocode(raw_address):
+    """Consulta Nominatim com fallback para variações de endereço."""
+    endereco_limpo = limpar_endereco(raw_address)
+    if not endereco_limpo:
+        return None, None
+
+    NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+    headers = {"User-Agent": "MasterGeoScript/1.0 (contato@mastersound.com)"}
+    REQUEST_DELAY = 1.5
+
+    # Tenta várias formas do endereço
+    tentativas = [
+        f"{endereco_limpo}, Minas Gerais, Brasil",
+        re.sub(r'\bAv[\.]?\b', 'Avenida', endereco_limpo) + ", Minas Gerais, Brasil",
+        endereco_limpo.split(',')[0] + ", Minas Gerais, Brasil"
+    ]
+
+    for q in tentativas:
+        try:
+            print(f"🔎 tentando: {q}")
+            params = {"q": q, "format": "json", "limit": 1}
+            resp = requests.get(NOMINATIM_URL, params=params, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data:
+                    lat = float(data[0]["lat"])
+                    lon = float(data[0]["lon"])
+                    print(f"✅ encontrado: {q} -> ({lat}, {lon})")
+                    return lat, lon
+        except Exception as e:
+            print(f"❌ erro ao consultar '{q}': {e}")
+        time.sleep(REQUEST_DELAY)
+
+    return None, None
 
 # ----------------------------
 # CONEXÃO COM MYSQL
