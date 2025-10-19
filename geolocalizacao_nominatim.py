@@ -1,146 +1,129 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import pandas as pd
 import requests
-from sqlalchemy import create_engine
-from sqlalchemy.exc import SQLAlchemyError
 import time
-import re
+import pandas as pd
+from sqlalchemy import create_engine, text
+from urllib.parse import quote_plus
 
+# ----------------------------
+# CONFIGURAÇÕES
+# ----------------------------
 
-# -------------------------
-# CONFIGURAÇÕES DE BANCO
-# -------------------------
-
-# MySQL externo (onde estão os endereços)
+# MySQL externo
 MYSQL_USER = "eugon2"
-MYSQL_PASSWORD = "Master45@net"  # senha original com @
-MYSQL_PASSWORD_ESC = MYSQL_PASSWORD.replace("@", "%40")  # escapando o @
+MYSQL_PASS = "Master45@net"
 MYSQL_HOST = "187.73.33.163"
-MYSQL_PORT = 3306
-MYSQL_DB = "eugon2"
-MYSQL_TABLE = "calendar"
+MYSQL_DB   = "eugon2"
 
-# PostgreSQL local (onde vamos salvar para Superset)
+# PostgreSQL local (para o Superset)
 PG_USER = "geo_user"
-PG_PASSWORD = "mastersoundbh"
+PG_PASS = "mastersoundbh"
 PG_HOST = "localhost"
 PG_PORT = 5432
-PG_DB = "geo"
+PG_DB   = "geo"
 PG_SCHEMA = "public"
 PG_TABLE = "enderecos_geolocalizados"
 
-# -------------------------
+# API Nominatim
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+REQUEST_DELAY = 1.5  # segundos entre requisições
+
+# ----------------------------
 # FUNÇÕES
-# -------------------------
+# ----------------------------
 
-def buscar_enderecos_mysql():
-    """Puxa endereços do MySQL somente de ontem"""
-    mysql_url = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD_ESC}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
-    engine_mysql = create_engine(mysql_url)
-    
-    query = """
-    SELECT EnderecoObra 
-    FROM calendar AS a 
-    WHERE CodServicosCab > 0 
-      AND DATE(a.start_date) = CURDATE() - INTERVAL 1 DAY 
-    ORDER BY a.id DESC;
-    """
-    
-    df = pd.read_sql(query, engine_mysql)
-    print(f"🔍 {len(df)} endereços encontrados do dia anterior no MySQL.")
-    return df
+def escape_password(password):
+    """Escapa caracteres especiais na senha"""
+    return quote_plus(password)
 
-
-def limpar_endereco(endereco):
-    """Limpa e padroniza o texto do endereço para melhor leitura pelo Nominatim."""
-    if not endereco or not isinstance(endereco, str):
-        return ""
-    
-    # Remove prefixos "Endereço Principal:" ou "Endereço da obra:" com espaços extras
-    endereco = re.sub(r'Endereço\s+(Principal|da obra)\s*:\s*', '', endereco, flags=re.IGNORECASE)
-    
-    # Remove outros termos desnecessários
-    endereco = re.sub(r'\b(Rua:|Avenida|Av\.?|N°|No\.?|Apto|Apartamento|Ed\.?|Condominio|Bairro:|Cidade:|CEP:)\b', '', endereco, flags=re.IGNORECASE)
-    
-    # Substitui múltiplos espaços e separa blocos por vírgula
-    endereco = re.sub(r'\s*-\s*', ', ', endereco)
-    endereco = re.sub(r'\s+', ' ', endereco).strip()
-    
-    return endereco
-
-
-
-def geolocalizar_endereco(endereco):
-    """Consulta o Nominatim para obter latitude e longitude."""
-    endereco_limpo = limpar_endereco(endereco)
-    if not endereco_limpo:
-        return None, None
-
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": endereco_limpo + ", Minas Gerais, Brasil",
-        "format": "json",
-        "limit": 1
-    }
-
+def geocode(address):
+    """Consulta Nominatim e retorna latitude e longitude"""
     try:
-        resp = requests.get(url, params=params, headers={"User-Agent": "MasterGeoScript"})
-        data = resp.json()
-        if data:
-            return float(data[0]["lat"]), float(data[0]["lon"])
-        else:
-            partes = endereco_limpo.split(",")
-            if len(partes) > 1:
-                fallback = partes[-1].strip() + ", Minas Gerais, Brasil"
-                params["q"] = fallback
-                resp = requests.get(url, params=params, headers={"User-Agent": "MasterGeoScript"})
-                data = resp.json()
-                if data:
-                    return float(data[0]["lat"]), float(data[0]["lon"])
+        params = {
+            "q": address,
+            "format": "json",
+            "addressdetails": 0,
+            "limit": 1,
+        }
+        headers = {"User-Agent": "MasterGeoScript/1.0"}
+        response = requests.get(NOMINATIM_URL, params=params, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception as e:
-        print(f"❌ Erro ao geolocalizar {endereco}: {e}")
-
+        print(f"❌ Erro ao consultar '{address}': {e}")
     return None, None
 
+def format_endereco(raw_address):
+    """Limpa o texto e monta formato amigável pro Nominatim"""
+    if not raw_address:
+        return ""
+    address = raw_address.replace("Endereço da Obra:", "")
+    address = address.replace("Endereço Principal:", "")
+    address = address.replace("Bairro:", "").replace("Cidade:", "")
+    return f"{address.strip()}, Minas Gerais, Brasil"
 
-# -------------------------
-# EXECUÇÃO
-# -------------------------
+# ----------------------------
+# CONEXÃO COM MYSQL
+# ----------------------------
 
-def main():
-    df = buscar_enderecos_mysql()
-    
-    latitudes = []
-    longitudes = []
-    for idx, row in df.iterrows():
-        endereco = row["EnderecoObra"]
-        lat, lon = geolocalizar_endereco(endereco)
-        latitudes.append(lat)
-        longitudes.append(lon)
-        print(f"📍 {endereco} -> ({lat}, {lon})")
-        time.sleep(1)  # Respeita limite do Nominatim
-    
-    df["Latitude"] = latitudes
-    df["Longitude"] = longitudes
-    
-    local_db_url = f"postgresql+psycopg2://{PG_USER}:{PG_PASSWORD}@{PG_HOST}:{PG_PORT}/{PG_DB}"
-    engine_pg = create_engine(local_db_url)
-    
-    try:
-        df.to_sql(
-            PG_TABLE,
-            engine_pg,
-            schema=PG_SCHEMA,
-            if_exists="replace",
-            index=False
-        )
-        print(f"✅ Dados salvos na tabela '{PG_SCHEMA}.{PG_TABLE}'.")
-        print("📦 Pronto para importar no Superset.")
-    except SQLAlchemyError as e:
-        print("❌ Erro ao salvar no PostgreSQL:", e)
+password_escaped = escape_password(MYSQL_PASS)
+mysql_engine = create_engine(
+    f"mysql+pymysql://{MYSQL_USER}:{password_escaped}@{MYSQL_HOST}/{MYSQL_DB}"
+)
 
+query = """
+SELECT EnderecoObra
+FROM calendar AS a
+WHERE CodServicosCab > 0
+  AND DATE(a.start_date) = CURDATE() - INTERVAL 2 DAY
+ORDER BY a.id DESC;
+"""
 
-if __name__ == "__main__":
-    main()
+with mysql_engine.connect() as conn:
+    df_enderecos = pd.read_sql(text(query), conn)
+
+print(f"🔍 {len(df_enderecos)} endereços encontrados no MySQL.")
+
+# ----------------------------
+# GEOCODIFICAÇÃO
+# ----------------------------
+
+results = []
+for _, row in df_enderecos.iterrows():
+    raw = row["EnderecoObra"]
+    endereco_limpo = format_endereco(raw)
+    lat, lon = geocode(endereco_limpo)
+    results.append({
+        "EnderecoOriginal": raw,
+        "EnderecoFormatado": endereco_limpo,
+        "Latitude": lat,
+        "Longitude": lon
+    })
+    print(f"📍 {raw} -> ({lat}, {lon})")
+    time.sleep(REQUEST_DELAY)
+
+df_geo = pd.DataFrame(results)
+
+# ----------------------------
+# SALVAR NO POSTGRES
+# ----------------------------
+
+pg_engine = create_engine(
+    f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+)
+
+with pg_engine.begin() as conn:
+    df_geo.to_sql(
+        PG_TABLE,
+        conn,
+        schema=PG_SCHEMA,
+        if_exists="replace",
+        index=False
+    )
+
+print(f"✅ Dados salvos na tabela '{PG_SCHEMA}.{PG_TABLE}'.")
+print("📦 Pronto para importar no Superset.")
